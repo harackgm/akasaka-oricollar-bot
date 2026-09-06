@@ -58,9 +58,8 @@ def send_line_flex_carousel(items_to_notify):
                 "type": "image",
                 "url": HEADER_IMAGE_URL,
                 "size": "full",
-                "aspectRatio": "2:1",      # 横長のバナー画像に合わせて枠を調整
-                "aspectMode": "fit",       # 画像を切り抜かず全体を収める設定に変更
-                "backgroundColor": "#FFFFFF" # 余白ができた場合の背景色（白）
+                "aspectRatio": "17:10",  # 新しいバナー画像の比率に最適化
+                "aspectMode": "cover"    # 枠いっぱいに敷き詰め、余白をなくす
             },
             "body": {
                 "type": "box",
