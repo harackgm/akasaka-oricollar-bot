@@ -12,12 +12,12 @@ from bs4 import BeautifulSoup
 LINE_CHANNEL_TOKEN = os.environ.get('LINE_CHANNEL_TOKEN', '')
 LINE_USER_ID = os.environ.get('LINE_USER_ID', '')
 
-# 絶対パスでDBファイルを指定
+# GitHub Actionsで実行した場合でもズレないよう絶対パスで指定
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'akasaka_items.json')
 
 START_URL = "https://fishing-akasaka.com/view/category/ct4"
 BASE_URL = "https://fishing-akasaka.com"
-MAX_NOTIFY_LIMIT = 5  # 大量通知ストッパー閾値
+MAX_NOTIFY_LIMIT = 5  # 大量通知ストッパー閾値 (LINEカルーセルの上限は10枠)
 
 # 誤検知とサーバー負荷軽減のためのUser-Agentリスト
 USER_AGENTS = [
@@ -26,27 +26,96 @@ USER_AGENTS = [
 ]
 
 # ==========================================
-# 2. 通知用関数 (LINE Messaging API)
+# 2. 通知用関数 (LINE Flex Message / カルーセル表示)
 # ==========================================
-def send_line_message(text):
+def send_line_flex_carousel(items_to_notify):
+    """複数の商品を1つのカルーセルメッセージとして送信する"""
     if not LINE_CHANNEL_TOKEN or not LINE_USER_ID:
         print("LINE APIキーが未設定のため通知をスキップします。")
         return
+    if not items_to_notify:
+        return
+
+    bubbles = []
+    for item in items_to_notify:
+        # 新規か再販かでラベルの色とテキストを変更
+        if item["notify_type"] == "new":
+            header_text = "【新商品追加】"
+            header_color = "#1DB446" # LINEグリーン
+        else:
+            header_text = "【再販開始】"
+            header_color = "#FF334B" # レッド
+
+        # 1商品分のカード（バブル）デザイン
+        bubble = {
+            "type": "bubble",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": header_text,
+                        "weight": "bold",
+                        "color": header_color,
+                        "size": "sm"
+                    },
+                    {
+                        "type": "text",
+                        "text": item["name"],
+                        "weight": "bold",
+                        "size": "md",
+                        "wrap": True,
+                        "margin": "md"
+                    }
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "color": "#4682B4", # ボタン色
+                        "action": {
+                            "type": "uri",
+                            "label": "商品を見る",
+                            "uri": item["url"]
+                        }
+                    }
+                ]
+            }
+        }
+        bubbles.append(bubble)
+
+    # カルーセル全体のペイロード（送信データ）
+    payload_data = {
+        "to": LINE_USER_ID,
+        "messages": [
+            {
+                "type": "flex",
+                "altText": "アカサカ釣具 新着・再販情報",
+                "contents": {
+                    "type": "carousel",
+                    "contents": bubbles
+                }
+            }
+        ]
+    }
 
     url = "https://api.line.me/v2/bot/message/push"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_CHANNEL_TOKEN}"
     }
-    data = {
-        "to": LINE_USER_ID,
-        "messages": [{"type": "text", "text": text}]
-    }
+
     try:
-        response = requests.post(url, headers=headers, json=data)
+        response = requests.post(url, headers=headers, json=payload_data)
         response.raise_for_status()
     except Exception as e:
-        print(f"LINE通知エラー: {e}")
+        print(f"LINEカルーセル通知エラー: {e}")
 
 # ==========================================
 # 3. スクレイピング処理
@@ -58,7 +127,6 @@ def fetch_all_items():
     while True:
         url = f"{START_URL}?page={current_page}"
         headers = {'User-Agent': random.choice(USER_AGENTS)}
-        print(f"ページ取得中: {url}")
         
         try:
             response = requests.get(url, headers=headers, timeout=10)
@@ -86,10 +154,8 @@ def fetch_all_items():
 
             # 在庫確認
             price_tag = li.find('dd', class_='item-info-price')
-            sold_out_tag = li.find('p', class_='item-soldout')
-            
             status = "in_stock"
-            if (price_tag and "SOLD OUT" in price_tag.text) or sold_out_tag:
+            if price_tag and "SOLD OUT" in price_tag.text:
                 status = "sold_out"
 
             items[item_id] = {
@@ -132,24 +198,33 @@ def main():
         print("商品データが取得できませんでした。")
         return
 
+    # カルーセルに渡すための辞書リスト
     notify_list = []
 
     for item_id, item_data in current_items.items():
         if item_id not in old_db:
             if item_data["status"] == "in_stock":
-                notify_list.append(f"【新商品追加】\n{item_data['name']}\n{item_data['url']}")
+                notify_list.append({
+                    "notify_type": "new",
+                    "name": item_data['name'],
+                    "url": item_data['url']
+                })
         else:
             old_status = old_db[item_id]["status"]
             if old_status == "sold_out" and item_data["status"] == "in_stock":
-                notify_list.append(f"【再販開始】\n{item_data['name']}\n{item_data['url']}")
+                notify_list.append({
+                    "notify_type": "restock",
+                    "name": item_data['name'],
+                    "url": item_data['url']
+                })
 
-    # 大量通知ストッパー
+    # 大量通知ストッパー (最大5件まで。超えた場合は通知せず上書きのみ)
     if len(notify_list) > MAX_NOTIFY_LIMIT:
         print(f"※安全装置作動※ 検知数が{len(notify_list)}件に達したため、通知をスキップしDBのみ更新します。")
     elif len(notify_list) > 0:
-        for msg in notify_list:
-            send_line_message(msg)
-            time.sleep(random.uniform(1.0, 2.0))
+        # まとめて1通のカルーセルとして送信
+        send_line_flex_carousel(notify_list)
+        time.sleep(random.uniform(1.0, 2.0))
     else:
         print("新規の販売・再販はありませんでした。")
 
