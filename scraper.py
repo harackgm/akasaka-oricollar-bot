@@ -6,20 +6,24 @@ import requests
 from bs4 import BeautifulSoup
 
 # ==========================================
+# 0. テストモード設定
+# ==========================================
+# Trueにすると実際のスクレイピングをスキップし、LINE通知テスト（デザイン確認）のみを実行します。
+# テスト完了後は必ず False に戻してください。
+TEST_MODE = True
+
+# ==========================================
 # 1. 基本設定
 # ==========================================
-# GitHub SecretsからAPIキーを取得
 LINE_CHANNEL_TOKEN = os.environ.get('LINE_CHANNEL_TOKEN', '')
 LINE_USER_ID = os.environ.get('LINE_USER_ID', '')
 
-# GitHub Actionsで実行した場合でもズレないよう絶対パスで指定
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'akasaka_items.json')
 
 START_URL = "https://fishing-akasaka.com/view/category/ct4"
 BASE_URL = "https://fishing-akasaka.com"
-MAX_NOTIFY_LIMIT = 5  # 大量通知ストッパー閾値 (LINEカルーセルの上限は10枠)
+MAX_NOTIFY_LIMIT = 5  # 大量通知ストッパー閾値
 
-# 誤検知とサーバー負荷軽減のためのUser-Agentリスト
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
@@ -38,7 +42,6 @@ def send_line_flex_carousel(items_to_notify):
 
     bubbles = []
     for item in items_to_notify:
-        # 新規か再販かでラベルの色とテキストを変更
         if item["notify_type"] == "new":
             header_text = "【新商品追加】"
             header_color = "#1DB446" # LINEグリーン
@@ -46,7 +49,6 @@ def send_line_flex_carousel(items_to_notify):
             header_text = "【再販開始】"
             header_color = "#FF334B" # レッド
 
-        # 1商品分のカード（バブル）デザイン
         bubble = {
             "type": "bubble",
             "body": {
@@ -78,7 +80,7 @@ def send_line_flex_carousel(items_to_notify):
                     {
                         "type": "button",
                         "style": "primary",
-                        "color": "#4682B4", # ボタン色
+                        "color": "#4682B4",
                         "action": {
                             "type": "uri",
                             "label": "商品を見る",
@@ -90,7 +92,6 @@ def send_line_flex_carousel(items_to_notify):
         }
         bubbles.append(bubble)
 
-    # カルーセル全体のペイロード（送信データ）
     payload_data = {
         "to": LINE_USER_ID,
         "messages": [
@@ -114,6 +115,7 @@ def send_line_flex_carousel(items_to_notify):
     try:
         response = requests.post(url, headers=headers, json=payload_data)
         response.raise_for_status()
+        print("LINEへカルーセル通知を送信しました。")
     except Exception as e:
         print(f"LINEカルーセル通知エラー: {e}")
 
@@ -149,10 +151,8 @@ def fetch_all_items():
             item_name = a_tag.text.strip()
             item_url = BASE_URL + a_tag['href']
             
-            # URLからIDを抽出
             item_id = a_tag['href'].split('?')[0].split('/')[-1]
 
-            # 在庫確認
             price_tag = li.find('dd', class_='item-info-price')
             status = "in_stock"
             if price_tag and "SOLD OUT" in price_tag.text:
@@ -164,7 +164,6 @@ def fetch_all_items():
                 "status": status
             }
 
-        # ページネーションの確認
         pager = soup.find('ul', class_='pager-wrap')
         next_page_exists = False
         if pager:
@@ -175,7 +174,6 @@ def fetch_all_items():
 
         if next_page_exists:
             current_page += 1
-            # 連続アクセスの負荷軽減（ゆらぎ）
             time.sleep(random.uniform(2.0, 5.0))
         else:
             break
@@ -186,6 +184,30 @@ def fetch_all_items():
 # 4. メイン処理（差分検知と安全装置）
 # ==========================================
 def main():
+    # --- テストモード処理 ---
+    if TEST_MODE:
+        print("テストモードで実行します。指定の3商品をLINEに通知します。")
+        test_items = [
+            {
+                "notify_type": "new",
+                "name": "【オリカラ】ディープパラドックス KID グレムリン【メール便OK】",
+                "url": "https://fishing-akasaka.com/view/item/000000000395"
+            },
+            {
+                "notify_type": "restock",
+                "name": "【オリカラ】ディープパラドックス グラビティ ドッポ【10枚までメール便OK】",
+                "url": "https://fishing-akasaka.com/view/item/000000000392"
+            },
+            {
+                "notify_type": "new",
+                "name": "【オリカラ】ラッキークラフト ワウ33S(ふわう) 赤坂グリ子【メール便OK】",
+                "url": "https://fishing-akasaka.com/view/item/000000000400"
+            }
+        ]
+        send_line_flex_carousel(test_items)
+        return
+    # ------------------------
+
     if os.path.exists(DB_FILE):
         with open(DB_FILE, 'r', encoding='utf-8') as f:
             old_db = json.load(f)
@@ -198,7 +220,6 @@ def main():
         print("商品データが取得できませんでした。")
         return
 
-    # カルーセルに渡すための辞書リスト
     notify_list = []
 
     for item_id, item_data in current_items.items():
@@ -218,17 +239,14 @@ def main():
                     "url": item_data['url']
                 })
 
-    # 大量通知ストッパー (最大5件まで。超えた場合は通知せず上書きのみ)
     if len(notify_list) > MAX_NOTIFY_LIMIT:
         print(f"※安全装置作動※ 検知数が{len(notify_list)}件に達したため、通知をスキップしDBのみ更新します。")
     elif len(notify_list) > 0:
-        # まとめて1通のカルーセルとして送信
         send_line_flex_carousel(notify_list)
         time.sleep(random.uniform(1.0, 2.0))
     else:
         print("新規の販売・再販はありませんでした。")
 
-    # DBを最新状態に上書き保存
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(current_items, f, ensure_ascii=False, indent=2)
 
