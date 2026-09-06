@@ -44,10 +44,10 @@ def send_line_flex_carousel(items_to_notify):
     for item in items_to_notify:
         if item["notify_type"] == "new":
             header_text = "【新商品追加】"
-            header_color = "#1DB446" # LINEグリーン
+            header_color = "#1DB446" # 視認性優先のLINEグリーン
         else:
             header_text = "【再販開始】"
-            header_color = "#FF334B" # レッド
+            header_color = "#FF334B" # 視認性優先のレッド
 
         bubble = {
             "type": "bubble",
@@ -87,7 +87,7 @@ def send_line_flex_carousel(items_to_notify):
                     {
                         "type": "button",
                         "style": "primary",
-                        "color": "#4682B4",
+                        "color": "#1B6634", # アカサカ釣具ロゴのダークグリーン
                         "action": {
                             "type": "uri",
                             "label": "商品を見る",
