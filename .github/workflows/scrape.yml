@@ -1,0 +1,32 @@
+name: Akasaka Scraper
+
+on:
+  workflow_dispatch: # 手動実行および外部からのAPI呼び出し用
+
+jobs:
+  scrape_and_notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Run Scraper
+        env:
+          LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: python scraper.py
+
+      - name: Commit and Push DB Changes
+        # JSONファイルの変更をリポジトリに自動保存（次回実行時に引き継ぐため必須）
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update items DB"
+          file_pattern: 'akasaka_items.json'
