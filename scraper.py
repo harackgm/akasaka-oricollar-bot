@@ -24,8 +24,8 @@ START_URL = "https://fishing-akasaka.com/view/category/ct4"
 BASE_URL = "https://fishing-akasaka.com"
 MAX_NOTIFY_LIMIT = 5  # 大量通知ストッパー閾値
 
-# ★最上段に表示するバナー画像のURL（GitHubにアップロードした画像のRaw URL等を指定）
-HEADER_IMAGE_URL = "https://raw.githubusercontent.com/harackgm/akasaka-oricollar-bot/main/Gemini_Generated_Image_eirwkoeirwkoeirw.jpg"
+# GitHub上のバナー画像のRaw URL
+HEADER_IMAGE_URL = "https://raw.githubusercontent.com/harackgm/akasaka-oricollar-bot/main/akasakabana.jpg"
 
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -56,9 +56,9 @@ def send_line_flex_carousel(items_to_notify):
             "type": "bubble",
             "hero": {
                 "type": "image",
-                "url": HEADER_IMAGE_URL, # 共通のバナー画像を設定
+                "url": HEADER_IMAGE_URL,
                 "size": "full",
-                "aspectRatio": "16:9",   # 横長のバナー画像に合わせた比率
+                "aspectRatio": "16:9",
                 "aspectMode": "cover"
             },
             "body": {
@@ -66,11 +66,20 @@ def send_line_flex_carousel(items_to_notify):
                 "layout": "vertical",
                 "contents": [
                     {
+                        "type": "image",
+                        "url": item.get("img_url", "https://fishing-akasaka.com/images/default.jpg"),
+                        "size": "full",
+                        "aspectRatio": "1:1",
+                        "aspectMode": "cover",
+                        "margin": "none"
+                    },
+                    {
                         "type": "text",
                         "text": header_text,
                         "weight": "bold",
                         "color": header_color,
-                        "size": "sm"
+                        "size": "sm",
+                        "margin": "md"
                     },
                     {
                         "type": "text",
@@ -78,7 +87,7 @@ def send_line_flex_carousel(items_to_notify):
                         "weight": "bold",
                         "size": "md",
                         "wrap": True,
-                        "margin": "md"
+                        "margin": "sm"
                     }
                 ]
             },
