@@ -24,6 +24,9 @@ START_URL = "https://fishing-akasaka.com/view/category/ct4"
 BASE_URL = "https://fishing-akasaka.com"
 MAX_NOTIFY_LIMIT = 5  # 大量通知ストッパー閾値
 
+# ★最上段に表示するバナー画像のURL（GitHubにアップロードした画像のRaw URL等を指定）
+HEADER_IMAGE_URL = "https://raw.githubusercontent.com/harackgm/akasaka-oricollar-bot/main/Gemini_Generated_Image_eirwkoeirwkoeirw.jpg"
+
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
@@ -53,9 +56,9 @@ def send_line_flex_carousel(items_to_notify):
             "type": "bubble",
             "hero": {
                 "type": "image",
-                "url": item.get("img_url", "https://fishing-akasaka.com/images/default.jpg"),
+                "url": HEADER_IMAGE_URL, # 共通のバナー画像を設定
                 "size": "full",
-                "aspectRatio": "1:1",
+                "aspectRatio": "16:9",   # 横長のバナー画像に合わせた比率
                 "aspectMode": "cover"
             },
             "body": {
