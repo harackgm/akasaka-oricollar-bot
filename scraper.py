@@ -8,15 +8,13 @@ from bs4 import BeautifulSoup
 # ==========================================
 # 0. テストモード設定
 # ==========================================
-# Trueにすると実際のスクレイピングをスキップし、LINE通知テスト（デザイン確認）のみを実行します。
-# テスト完了後は必ず False に戻してください。
-TEST_MODE = True
+# 本番稼働のため False に設定
+TEST_MODE = False
 
 # ==========================================
 # 1. 基本設定
 # ==========================================
 LINE_CHANNEL_TOKEN = os.environ.get('LINE_CHANNEL_TOKEN', '')
-LINE_USER_ID = os.environ.get('LINE_USER_ID', '')
 
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'akasaka_items.json')
 
@@ -33,11 +31,11 @@ USER_AGENTS = [
 ]
 
 # ==========================================
-# 2. 通知用関数 (LINE Flex Message / カルーセル表示)
+# 2. 通知用関数 (LINE Flex Message / Broadcast送信)
 # ==========================================
 def send_line_flex_carousel(items_to_notify):
-    """複数の商品を1つのカルーセルメッセージとして送信する"""
-    if not LINE_CHANNEL_TOKEN or not LINE_USER_ID:
+    """複数の商品を1つのカルーセルメッセージとして全員に一斉送信する"""
+    if not LINE_CHANNEL_TOKEN:
         print("LINE APIキーが未設定のため通知をスキップします。")
         return
     if not items_to_notify:
@@ -47,10 +45,10 @@ def send_line_flex_carousel(items_to_notify):
     for item in items_to_notify:
         if item["notify_type"] == "new":
             header_text = "【新商品追加】"
-            header_color = "#1DB446" # 視認性優先のLINEグリーン
+            header_color = "#1DB446"
         else:
             header_text = "【再販開始】"
-            header_color = "#FF334B" # 視認性優先のレッド
+            header_color = "#FF334B"
 
         bubble = {
             "type": "bubble",
@@ -58,9 +56,8 @@ def send_line_flex_carousel(items_to_notify):
                 "type": "image",
                 "url": HEADER_IMAGE_URL,
                 "size": "full",
-                "aspectRatio": "17:10",  
-                "aspectMode": "fit",         # スマホでの見切れを防ぐため、全体を収める設定に変更
-                "backgroundColor": "#FFFFFF" # 余白が発生した場合の背景色を白に指定
+                "aspectRatio": "17:10",
+                "aspectMode": "cover"
             },
             "body": {
                 "type": "box",
@@ -100,7 +97,7 @@ def send_line_flex_carousel(items_to_notify):
                     {
                         "type": "button",
                         "style": "primary",
-                        "color": "#1B6634", # アカサカ釣具ロゴのダークグリーン
+                        "color": "#1B6634",
                         "action": {
                             "type": "uri",
                             "label": "商品を見る",
@@ -112,8 +109,8 @@ def send_line_flex_carousel(items_to_notify):
         }
         bubbles.append(bubble)
 
+    # BroadcastAPI（全員への一斉送信）を使用するため、"to" の指定は不要
     payload_data = {
-        "to": LINE_USER_ID,
         "messages": [
             {
                 "type": "flex",
@@ -126,7 +123,8 @@ def send_line_flex_carousel(items_to_notify):
         ]
     }
 
-    url = "https://api.line.me/v2/bot/message/push"
+    # APIエンドポイントを broadcast に変更
+    url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_CHANNEL_TOKEN}"
@@ -135,7 +133,7 @@ def send_line_flex_carousel(items_to_notify):
     try:
         response = requests.post(url, headers=headers, json=payload_data)
         response.raise_for_status()
-        print("LINEへカルーセル通知を送信しました。")
+        print("LINEへ一斉送信（Broadcast）を完了しました。")
     except Exception as e:
         print(f"LINEカルーセル通知エラー: {e}")
 
@@ -158,6 +156,7 @@ def fetch_all_items():
             break
 
         soup = BeautifulSoup(response.text, 'html.parser')
+        # サイトソースから商品リスト部分を抽出[cite: 1, 2]
         item_list = soup.find('ul', class_='item-list newitems-list')
         if not item_list:
             break
@@ -176,6 +175,7 @@ def fetch_all_items():
             
             item_id = a_tag['href'].split('?')[0].split('/')[-1]
 
+            # サイトソース上の SOLD OUT 表記の有無で在庫判定[cite: 1, 2]
             price_tag = li.find('dd', class_='item-info-price')
             status = "in_stock"
             if price_tag and "SOLD OUT" in price_tag.text:
@@ -208,32 +208,9 @@ def fetch_all_items():
 # 4. メイン処理（差分検知と安全装置）
 # ==========================================
 def main():
-    # --- テストモード処理 ---
     if TEST_MODE:
-        print("テストモードで実行します。指定の3商品をLINEに通知します。")
-        test_items = [
-            {
-                "notify_type": "new",
-                "name": "【オリカラ】ディープパラドックス KID グレムリン【メール便OK】",
-                "url": "https://fishing-akasaka.com/view/item/000000000395",
-                "img_url": "https://makeshop-multi-images.akamaized.net/akasakashop/itemimages/000000000395_cgw69co.jpg"
-            },
-            {
-                "notify_type": "restock",
-                "name": "【オリカラ】ディープパラドックス グラビティ ドッポ【10枚までメール便OK】",
-                "url": "https://fishing-akasaka.com/view/item/000000000392",
-                "img_url": "https://makeshop-multi-images.akamaized.net/akasakashop/itemimages/000000000392_LaQxlNW.jpg"
-            },
-            {
-                "notify_type": "new",
-                "name": "【オリカラ】ラッキークラフト ワウ33S(ふわう) 赤坂グリ子【メール便OK】",
-                "url": "https://fishing-akasaka.com/view/item/000000000400",
-                "img_url": "https://makeshop-multi-images.akamaized.net/akasakashop/itemimages/000000000400_0xR16AO.jpg"
-            }
-        ]
-        send_line_flex_carousel(test_items)
+        print("テストモードが有効です。本番稼働させるには False に変更してください。")
         return
-    # ------------------------
 
     if os.path.exists(DB_FILE):
         with open(DB_FILE, 'r', encoding='utf-8') as f:
@@ -268,6 +245,7 @@ def main():
                     "img_url": item_data.get('img_url', '')
                 })
 
+    # 大量通知ストッパー：検知数が上限を超えた場合は通知スキップ
     if len(notify_list) > MAX_NOTIFY_LIMIT:
         print(f"※安全装置作動※ 検知数が{len(notify_list)}件に達したため、通知をスキップしDBのみ更新します。")
     elif len(notify_list) > 0:
@@ -276,6 +254,7 @@ def main():
     else:
         print("新規の販売・再販はありませんでした。")
 
+    # DBを最新状態に上書き保存
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(current_items, f, ensure_ascii=False, indent=2)
 
