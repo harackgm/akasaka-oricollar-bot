@@ -51,6 +51,13 @@ def send_line_flex_carousel(items_to_notify):
 
         bubble = {
             "type": "bubble",
+            "hero": {
+                "type": "image",
+                "url": item.get("img_url", "https://fishing-akasaka.com/images/default.jpg"),
+                "size": "full",
+                "aspectRatio": "1:1",
+                "aspectMode": "cover"
+            },
             "body": {
                 "type": "box",
                 "layout": "vertical",
@@ -151,6 +158,9 @@ def fetch_all_items():
             item_name = a_tag.text.strip()
             item_url = BASE_URL + a_tag['href']
             
+            img_tag = li.find('img')
+            img_url = img_tag['src'] if img_tag else ""
+            
             item_id = a_tag['href'].split('?')[0].split('/')[-1]
 
             price_tag = li.find('dd', class_='item-info-price')
@@ -161,6 +171,7 @@ def fetch_all_items():
             items[item_id] = {
                 "name": item_name,
                 "url": item_url,
+                "img_url": img_url,
                 "status": status
             }
 
@@ -191,17 +202,20 @@ def main():
             {
                 "notify_type": "new",
                 "name": "【オリカラ】ディープパラドックス KID グレムリン【メール便OK】",
-                "url": "https://fishing-akasaka.com/view/item/000000000395"
+                "url": "https://fishing-akasaka.com/view/item/000000000395",
+                "img_url": "https://makeshop-multi-images.akamaized.net/akasakashop/itemimages/000000000395_cgw69co.jpg"
             },
             {
                 "notify_type": "restock",
                 "name": "【オリカラ】ディープパラドックス グラビティ ドッポ【10枚までメール便OK】",
-                "url": "https://fishing-akasaka.com/view/item/000000000392"
+                "url": "https://fishing-akasaka.com/view/item/000000000392",
+                "img_url": "https://makeshop-multi-images.akamaized.net/akasakashop/itemimages/000000000392_LaQxlNW.jpg"
             },
             {
                 "notify_type": "new",
                 "name": "【オリカラ】ラッキークラフト ワウ33S(ふわう) 赤坂グリ子【メール便OK】",
-                "url": "https://fishing-akasaka.com/view/item/000000000400"
+                "url": "https://fishing-akasaka.com/view/item/000000000400",
+                "img_url": "https://makeshop-multi-images.akamaized.net/akasakashop/itemimages/000000000400_0xR16AO.jpg"
             }
         ]
         send_line_flex_carousel(test_items)
@@ -228,7 +242,8 @@ def main():
                 notify_list.append({
                     "notify_type": "new",
                     "name": item_data['name'],
-                    "url": item_data['url']
+                    "url": item_data['url'],
+                    "img_url": item_data.get('img_url', '')
                 })
         else:
             old_status = old_db[item_id]["status"]
@@ -236,7 +251,8 @@ def main():
                 notify_list.append({
                     "notify_type": "restock",
                     "name": item_data['name'],
-                    "url": item_data['url']
+                    "url": item_data['url'],
+                    "img_url": item_data.get('img_url', '')
                 })
 
     if len(notify_list) > MAX_NOTIFY_LIMIT:
