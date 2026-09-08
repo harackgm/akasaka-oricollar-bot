@@ -8,13 +8,14 @@ from bs4 import BeautifulSoup
 # ==========================================
 # 0. テストモード設定
 # ==========================================
-# 本番稼働のため False に設定
+# 本番稼働のため False に設定（Trueにすると管理者のみにテスト送信されます）
 TEST_MODE = False
 
 # ==========================================
 # 1. 基本設定
 # ==========================================
 LINE_CHANNEL_TOKEN = os.environ.get('LINE_CHANNEL_TOKEN', '')
+LINE_USER_ID = os.environ.get('LINE_USER_ID', '')  # テスト動作用に必要
 
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'akasaka_items.json')
 
@@ -31,15 +32,19 @@ USER_AGENTS = [
 ]
 
 # ==========================================
-# 2. 通知用関数 (LINE Flex Message / Broadcast送信)
+# 2. 通知用関数 (LINE Flex Message / Push or Broadcast)
 # ==========================================
-def send_line_flex_carousel(items_to_notify):
-    """複数の商品を1つのカルーセルメッセージとして全員に一斉送信する"""
+def send_line_flex_carousel(items_to_notify, is_test=False):
+    """複数の商品を1つのカルーセルメッセージとして送信する"""
     if not LINE_CHANNEL_TOKEN:
         print("LINE APIキーが未設定のため通知をスキップします。")
         return
     if not items_to_notify:
         return
+
+    # LINEのキャッシュを破棄するための現在時刻タイムスタンプ
+    current_ts = str(int(time.time()))
+    header_img_cache_busted = f"{HEADER_IMAGE_URL}?v={current_ts}"
 
     bubbles = []
     for item in items_to_notify:
@@ -50,11 +55,16 @@ def send_line_flex_carousel(items_to_notify):
             header_text = "【再販開始】"
             header_color = "#FF334B"
 
+        # 商品画像のキャッシュバスティング（既に?が含まれるURLも考慮）
+        base_img_url = item.get("img_url", "https://fishing-akasaka.com/images/default.jpg")
+        separator = "&" if "?" in base_img_url else "?"
+        item_img_cache_busted = f"{base_img_url}{separator}v={current_ts}"
+
         bubble = {
             "type": "bubble",
             "hero": {
                 "type": "image",
-                "url": HEADER_IMAGE_URL,
+                "url": header_img_cache_busted,
                 "size": "full",
                 "aspectRatio": "17:10",
                 "aspectMode": "cover"
@@ -65,7 +75,7 @@ def send_line_flex_carousel(items_to_notify):
                 "contents": [
                     {
                         "type": "image",
-                        "url": item.get("img_url", "https://fishing-akasaka.com/images/default.jpg"),
+                        "url": item_img_cache_busted,
                         "size": "full",
                         "aspectRatio": "1:1",
                         "aspectMode": "cover",
@@ -109,22 +119,37 @@ def send_line_flex_carousel(items_to_notify):
         }
         bubbles.append(bubble)
 
-    # BroadcastAPI（全員への一斉送信）を使用するため、"to" の指定は不要
-    payload_data = {
-        "messages": [
-            {
-                "type": "flex",
-                "altText": "アカサカ釣具 新着・再販情報",
-                "contents": {
-                    "type": "carousel",
-                    "contents": bubbles
+    # テストモード時は自分のみ(Push)、本番時は全員(Broadcast)へ分岐
+    if is_test:
+        url = "https://api.line.me/v2/bot/message/push"
+        payload_data = {
+            "to": LINE_USER_ID,
+            "messages": [
+                {
+                    "type": "flex",
+                    "altText": "【テスト】アカサカ釣具 新着・再販情報",
+                    "contents": {
+                        "type": "carousel",
+                        "contents": bubbles
+                    }
                 }
-            }
-        ]
-    }
+            ]
+        }
+    else:
+        url = "https://api.line.me/v2/bot/message/broadcast"
+        payload_data = {
+            "messages": [
+                {
+                    "type": "flex",
+                    "altText": "アカサカ釣具 新着・再販情報",
+                    "contents": {
+                        "type": "carousel",
+                        "contents": bubbles
+                    }
+                }
+            ]
+        }
 
-    # APIエンドポイントを broadcast に変更
-    url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_CHANNEL_TOKEN}"
@@ -133,7 +158,8 @@ def send_line_flex_carousel(items_to_notify):
     try:
         response = requests.post(url, headers=headers, json=payload_data)
         response.raise_for_status()
-        print("LINEへ一斉送信（Broadcast）を完了しました。")
+        send_type = "個人(Push)" if is_test else "一斉送信(Broadcast)"
+        print(f"LINEへ{send_type}を完了しました。")
     except Exception as e:
         print(f"LINEカルーセル通知エラー: {e}")
 
@@ -156,7 +182,6 @@ def fetch_all_items():
             break
 
         soup = BeautifulSoup(response.text, 'html.parser')
-        # サイトソースから商品リスト部分を抽出[cite: 1, 2]
         item_list = soup.find('ul', class_='item-list newitems-list')
         if not item_list:
             break
@@ -175,7 +200,6 @@ def fetch_all_items():
             
             item_id = a_tag['href'].split('?')[0].split('/')[-1]
 
-            # サイトソース上の SOLD OUT 表記の有無で在庫判定[cite: 1, 2]
             price_tag = li.find('dd', class_='item-info-price')
             status = "in_stock"
             if price_tag and "SOLD OUT" in price_tag.text:
@@ -208,9 +232,21 @@ def fetch_all_items():
 # 4. メイン処理（差分検知と安全装置）
 # ==========================================
 def main():
+    # --- テストモード時の処理 ---
     if TEST_MODE:
-        print("テストモードが有効です。本番稼働させるには False に変更してください。")
+        print("テストモードで実行します。指定のダミー商品を管理者のみに通知します。")
+        test_items = [
+            {
+                "notify_type": "new",
+                "name": "【オリカラ】ディープパラドックス KID グレムリン【メール便OK】",
+                "url": "https://fishing-akasaka.com/view/item/000000000395",
+                "img_url": "https://makeshop-multi-images.akamaized.net/akasakashop/itemimages/000000000395_cgw69co.jpg"
+            }
+        ]
+        # is_test=True を渡すことで、全員ではなく管理者（LINE_USER_ID）にのみ送信される
+        send_line_flex_carousel(test_items, is_test=True)
         return
+    # ------------------------
 
     if os.path.exists(DB_FILE):
         with open(DB_FILE, 'r', encoding='utf-8') as f:
@@ -249,7 +285,7 @@ def main():
     if len(notify_list) > MAX_NOTIFY_LIMIT:
         print(f"※安全装置作動※ 検知数が{len(notify_list)}件に達したため、通知をスキップしDBのみ更新します。")
     elif len(notify_list) > 0:
-        send_line_flex_carousel(notify_list)
+        send_line_flex_carousel(notify_list, is_test=False)
         time.sleep(random.uniform(1.0, 2.0))
     else:
         print("新規の販売・再販はありませんでした。")
